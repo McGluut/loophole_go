@@ -149,6 +149,17 @@ def _try_user_resolution(state, case_obj, decision, legislator, judge):
                 state.user_clarifications.pop()
 
 
+def _display_protocol_error(title: str, message: str) -> None:
+    console.print(
+        Panel(
+            message,
+            title=title,
+            border_style="red",
+            padding=(1, 2),
+        )
+    )
+
+
 def _run_adversarial_loop(state, agents, session_mgr, config):
     max_rounds = config["loop"]["max_rounds"]
     legislator: Legislator = agents["legislator"]
@@ -224,9 +235,17 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
                     case_obj.status = CaseStatus.AUTO_RESOLVED
                     case_obj.resolved_by = "judge"
 
-                    revised = legislator.revise(state, case_obj)
+                    try:
+                        revised = legislator.revise(state, case_obj)
+                    except ProtocolError as exc:
+                        _display_protocol_error("[red bold]Legislator Protocol Error[/red bold]", str(exc))
+                        raise typer.Exit(code=1) from exc
 
-                    validation = _validate_revised_code(state, revised, judge)
+                    try:
+                        validation = _validate_revised_code(state, revised, judge)
+                    except ProtocolError as exc:
+                        _display_protocol_error("[red bold]Judge Protocol Error[/red bold]", str(exc))
+                        raise typer.Exit(code=1) from exc
                     if validation is None or validation.passes:
                         _accept_revision(state, revised)
                         console.print(
@@ -247,7 +266,11 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
                     case_obj.status = CaseStatus.AUTO_RESOLVED
                     case_obj.resolved_by = "judge"
 
-                    revised = legislator.revise(state, case_obj)
+                    try:
+                        revised = legislator.revise(state, case_obj)
+                    except ProtocolError as exc:
+                        _display_protocol_error("[red bold]Legislator Protocol Error[/red bold]", str(exc))
+                        raise typer.Exit(code=1) from exc
                     _accept_revision(state, revised)
                     console.print(
                         f" [green]Resolved → Code v{revised.version}[/green]"
@@ -315,7 +338,11 @@ def _escalate(state, case_obj, conflict_text, legislator, judge):
         )
 
         console.print("  [dim]Updating legal code...[/dim]")
-        accepted, details = _try_user_resolution(state, case_obj, decision, legislator, judge)
+        try:
+            accepted, details = _try_user_resolution(state, case_obj, decision, legislator, judge)
+        except ProtocolError as exc:
+            _display_protocol_error("[red bold]Escalation Protocol Error[/red bold]", str(exc))
+            raise typer.Exit(code=1) from exc
         if accepted:
             console.print(f"  [green]{details}[/green]")
             return
@@ -390,7 +417,11 @@ def new(
         moral_principles=principles,
         current_code=LegalCode(version=0, text=""),
     )
-    initial_code = legislator.draft_initial(placeholder)
+    try:
+        initial_code = legislator.draft_initial(placeholder)
+    except ProtocolError as exc:
+        _display_protocol_error("[red bold]Legislator Protocol Error[/red bold]", str(exc))
+        raise typer.Exit(code=1) from exc
 
     state = session_mgr.create_session(session_id, domain, principles, initial_code)
     _display_legal_code(state.current_code)
@@ -499,6 +530,8 @@ def visualize(
     state = session_mgr.load(session_id)
 
     from loophole.visualize import generate_html
+    if output is None:
+        output = str(Path(config["session_dir"]) / state.session_id / "report.html")
     report_path = generate_html(state, output_path=output)
     console.print(f"[bold green]Report generated:[/bold green] {report_path}")
 

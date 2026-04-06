@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
+import typer
+
+import loophole.main as main_module
+from loophole.errors import ProtocolError
 from loophole.main import _assign_case_ids, _try_user_resolution
 from loophole.models import Case, CaseStatus, CaseType, LegalCode, SessionState
 
@@ -31,6 +36,14 @@ class DummyJudge:
 
     def validate(self, state: SessionState, proposed_code: str) -> SimpleNamespace:
         return SimpleNamespace(passes=self.passes, details=self.details)
+
+
+class BrokenLegislator:
+    def revise(self, state: SessionState, case: Case) -> LegalCode:
+        raise ProtocolError("missing legal code block")
+
+    def draft_initial(self, state: SessionState) -> LegalCode:
+        raise ProtocolError("missing legal code block")
 
 
 class MainProtocolTests(unittest.TestCase):
@@ -117,3 +130,35 @@ class MainProtocolTests(unittest.TestCase):
         self.assertEqual(len(state.code_history), 0)
         self.assertEqual(current.status, CaseStatus.ESCALATED)
         self.assertEqual(state.user_clarifications, [])
+
+    def test_escalate_turns_protocol_error_into_clean_exit(self) -> None:
+        state = make_state()
+        current = Case(
+            id=2,
+            round=1,
+            case_type=CaseType.OVERREACH,
+            scenario="current",
+            explanation="current",
+            status=CaseStatus.ESCALATED,
+        )
+
+        with mock.patch.object(main_module, "_get_multiline_input", return_value="decision"):
+            with self.assertRaises(typer.Exit):
+                main_module._escalate(
+                    state,
+                    current,
+                    "conflict",
+                    BrokenLegislator(),
+                    DummyJudge(True),
+                )
+
+    def test_new_turns_initial_draft_protocol_error_into_clean_exit(self) -> None:
+        with mock.patch.object(main_module, "_load_config", return_value={"session_dir": "sessions"}):
+            with mock.patch.object(
+                main_module,
+                "_build_agents",
+                return_value={"legislator": BrokenLegislator()},
+            ):
+                with mock.patch.object(main_module, "_get_multiline_input", return_value="Protect privacy."):
+                    with self.assertRaises(typer.Exit):
+                        main_module.new(domain="privacy", principles_file=None)

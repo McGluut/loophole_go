@@ -69,3 +69,18 @@ class SessionAndVisualizeTests(unittest.TestCase):
             self.assertEqual(Path(written), output_path)
             self.assertTrue(output_path.exists())
             self.assertIn("Final Legal Code", output_path.read_text())
+
+    def test_generate_html_uses_session_dir_style_default_when_provided(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = SessionState(
+                session_id="session_c",
+                domain="privacy",
+                moral_principles="Protect privacy.",
+                current_code=LegalCode(version=1, text="Article 1"),
+            )
+
+            output_path = Path(tmpdir) / "custom_sessions" / "session_c" / "report.html"
+            written = generate_html(state, output_path=str(output_path))
+
+            self.assertEqual(Path(written), output_path)
+            self.assertTrue(output_path.exists())
