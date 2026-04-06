@@ -84,7 +84,7 @@ See [docs/operator-guide.md](docs/operator-guide.md) for current path behavior a
 - Python 3.12+
 - a live API key for the configured provider
 
-### Quickstart for most users
+### Quickstart with `uv`
 
 ```bash
 git clone https://github.com/McGluut/loophole_go
@@ -108,6 +108,22 @@ If you prefer the module form:
 
 ```bash
 uv run python -m loophole.main
+```
+
+### Quickstart without `uv`
+
+```powershell
+git clone https://github.com/McGluut/loophole_go
+cd loophole_go
+python -m pip install -e .
+$env:LOOPHOLE_API_KEY="sk-ant-..."
+python -m loophole.main
+```
+
+If the console script is on your `PATH`, this also works:
+
+```powershell
+loophole
 ```
 
 ### Install details
@@ -158,46 +174,62 @@ If you cloned the repo and are running from source, do not assume plain `python 
 
 ### Start a new session
 
-Installed console script:
+With `uv`:
 
 ```bash
 uv run loophole new --domain privacy --principles examples/privacy_principles.txt
 ```
 
-Module form:
+Without `uv`, module form:
 
 ```bash
-uv run python -m loophole.main new --domain privacy --principles examples/privacy_principles.txt
+python -m loophole.main new --domain privacy --principles examples/privacy_principles.txt
 ```
 
-Interactive menu:
+Without `uv`, installed console script:
+
+```bash
+loophole new --domain privacy --principles examples/privacy_principles.txt
+```
+
+Interactive menu with `uv`:
 
 ```bash
 uv run loophole
 ```
 
+Interactive menu without `uv`:
+
+```bash
+python -m loophole.main
+```
+
 ### Resume a session
+
+With `uv`:
 
 ```bash
 uv run loophole resume
 ```
 
-or
+Without `uv`:
 
 ```bash
-uv run python -m loophole.main resume
+python -m loophole.main resume
 ```
 
 ### Generate a report
+
+With `uv`:
 
 ```bash
 uv run loophole visualize
 ```
 
-or
+Without `uv`:
 
 ```bash
-uv run python -m loophole.main visualize
+python -m loophole.main visualize
 ```
 
 ## Configuration
