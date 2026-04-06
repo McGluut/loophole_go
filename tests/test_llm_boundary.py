@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
-from loophole.errors import DependencyError
+from loophole.errors import DependencyError, ProviderAuthError
 from loophole.llm import LLMClient
 
 
@@ -23,3 +24,24 @@ class LLMBoundaryTests(unittest.TestCase):
         message = str(exc_info.exception)
         self.assertIn("uv sync", message)
         self.assertIn("python -m pip install -e .", message)
+
+    def test_llm_client_translates_provider_auth_failure(self) -> None:
+        class FakeAuthenticationError(Exception):
+            pass
+
+        client = LLMClient.__new__(LLMClient)
+        client.anthropic = SimpleNamespace(AuthenticationError=FakeAuthenticationError)
+        client.client = SimpleNamespace(
+            messages=SimpleNamespace(
+                create=mock.Mock(side_effect=FakeAuthenticationError("invalid x-api-key"))
+            )
+        )
+        client.model = "test-model"
+        client.max_tokens = 128
+
+        with self.assertRaises(ProviderAuthError) as exc_info:
+            client.call("system", "user")
+
+        message = str(exc_info.exception)
+        self.assertIn("authentication failed", message.lower())
+        self.assertIn("LOOPHOLE_API_KEY", message)

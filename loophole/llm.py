@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from loophole.errors import DependencyError, ProtocolError
+from loophole.errors import DependencyError, ProtocolError, ProviderAuthError
 
 
 class LLMClient:
@@ -21,6 +21,7 @@ class LLMClient:
                 "If you are not using uv, run `python -m pip install -e .` first."
             ) from exc
 
+        self.anthropic = anthropic
         api_key = os.getenv("LOOPHOLE_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise DependencyError(
@@ -33,13 +34,18 @@ class LLMClient:
         self.max_tokens = max_tokens
 
     def call(self, system: str, user_message: str, temperature: float = 0.5) -> str:
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            temperature=temperature,
-            system=system,
-            messages=[{"role": "user", "content": user_message}],
-        )
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                temperature=temperature,
+                system=system,
+                messages=[{"role": "user", "content": user_message}],
+            )
+        except self.anthropic.AuthenticationError as exc:
+            raise ProviderAuthError(
+                "Provider authentication failed. Check LOOPHOLE_API_KEY or ANTHROPIC_API_KEY and try again."
+            ) from exc
         text_blocks = [
             block.text
             for block in response.content

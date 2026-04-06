@@ -15,7 +15,7 @@ from loophole.agents.judge import Judge
 from loophole.agents.legislator import Legislator
 from loophole.agents.loophole_finder import LoopholeFinder
 from loophole.agents.overreach_finder import OverreachFinder
-from loophole.errors import DependencyError, ProtocolError
+from loophole.errors import DependencyError, ProtocolError, ProviderAuthError
 from loophole.llm import LLMClient
 from loophole.models import CaseStatus, CaseType, LegalCode, SessionState
 from loophole.session import SessionManager
@@ -432,7 +432,7 @@ def new(
     config = _load_config()
     try:
         agents = _build_agents(config)
-    except DependencyError as exc:
+    except (DependencyError, ProviderAuthError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
@@ -459,7 +459,7 @@ def new(
     )
     try:
         initial_code = legislator.draft_initial(placeholder)
-    except ProtocolError as exc:
+    except (ProtocolError, ProviderAuthError) as exc:
         _display_protocol_error("[red bold]Legislator Protocol Error[/red bold]", str(exc))
         raise typer.Exit(code=1) from exc
 
@@ -508,7 +508,7 @@ def resume(
     state = session_mgr.load(session_id)
     try:
         agents = _build_agents(config)
-    except DependencyError as exc:
+    except (DependencyError, ProviderAuthError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
