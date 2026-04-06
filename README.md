@@ -82,7 +82,7 @@ See [docs/operator-guide.md](docs/operator-guide.md) for current path behavior a
 ### Requirements
 
 - Python 3.12+
-- an Anthropic API key for live runs
+- a live API key for the configured provider
 
 ### Install
 
@@ -104,17 +104,27 @@ python -m pip install anthropic pydantic rich typer pyyaml
 
 ### Set your API key
 
+Preferred generic variable:
+
 Bash:
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
+export LOOPHOLE_API_KEY="sk-ant-..."
 ```
 
 PowerShell:
 
 ```powershell
-$env:ANTHROPIC_API_KEY="sk-ant-..."
+$env:LOOPHOLE_API_KEY="sk-ant-..."
 ```
+
+Backward-compatible provider variable:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+Live runs in this repo still use the Anthropic SDK today. The generic `LOOPHOLE_API_KEY` name is provided so local setup does not have to depend on a provider-specific environment variable.
 
 ## Usage
 

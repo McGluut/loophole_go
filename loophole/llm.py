@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from loophole.errors import DependencyError, ProtocolError
 
 
@@ -17,7 +19,14 @@ class LLMClient:
                 "Install project dependencies before starting a session."
             ) from exc
 
-        self.client = anthropic.Anthropic()
+        api_key = os.getenv("LOOPHOLE_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise DependencyError(
+                "A live API key is required to run Loophole. "
+                "Set LOOPHOLE_API_KEY or ANTHROPIC_API_KEY before starting a session."
+            )
+
+        self.client = anthropic.Anthropic(api_key=api_key)
         self.model = model
         self.max_tokens = max_tokens
 
