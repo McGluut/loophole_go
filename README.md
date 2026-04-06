@@ -1,187 +1,221 @@
 # Loophole
 
-**Adversarial moral-legal code system** — an AI tool that stress-tests your ethical principles by trying to break them.
+Loophole is a human-in-the-loop adversarial drafting tool for turning moral principles into a draft legal-style code, attacking that code with counterexamples, and revising it round by round.
 
-## The Idea
+It is designed to help surface pressure on a rule set. It is not a moral theorem prover, a formal verifier, or an autonomous policy engine.
 
-Real legal systems evolve slowly. A law gets written, someone finds a loophole, a court patches it, someone finds another loophole. This process takes decades. Loophole compresses it into minutes.
+## What Loophole Does
 
-You state your moral principles in plain language. An AI legislator drafts a formal legal code from them. Then two adversarial agents attack it:
+Loophole runs a four-role loop:
 
-- **The Loophole Finder** searches for scenarios that are *technically legal* under your code but *morally wrong* according to your principles. Think creative rule-lawyering, exploiting vague definitions, finding gaps the drafters didn't anticipate.
+1. A **Legislator** drafts a legal code from your stated principles.
+2. A **Loophole Finder** looks for scenarios that appear legal under that code but violate the intended principles.
+3. An **Overreach Finder** looks for the opposite: scenarios the code prohibits even though a human may still judge them acceptable.
+4. A **Judge** decides whether a case looks locally resolvable or should be escalated back to the operator.
 
-- **The Overreach Finder** searches for the opposite: scenarios your code *prohibits* that you'd actually consider *morally acceptable*. Good Samaritan situations, overbroad rules that catch innocent behavior, emergencies where rigid compliance causes worse outcomes.
+Every round produces explicit artifacts:
 
-When an attack lands, a **Judge agent** tries to patch the code automatically — but only if the fix doesn't break any previous ruling. Every resolved case becomes a permanent constraint, a growing test suite the code must satisfy.
+- the current legal code
+- a case log
+- serialized session state
+- an HTML report
 
-If the Judge can't find a consistent fix — meaning any patch would contradict a prior decision — the case gets **escalated to you**. These escalated cases are guaranteed to be interesting: they represent genuine tensions in your own moral framework, places where your principles actually conflict with each other.
+## What Loophole Does Not Do
 
-The legal code gets progressively more robust. But the real output isn't the code — it's what you discover about your own beliefs.
+Loophole does not provide:
 
-## How It Works
+- formal consistency proofs
+- exhaustive loophole coverage
+- guaranteed preservation of moral intent
+- autonomous high-stakes decision making
+- evidence that an escalation reflects a deep moral contradiction rather than drafting ambiguity, validator conservatism, or model error
 
-```
-                    +-----------------+
-                    |  Your Moral     |
-                    |  Principles     |
-                    +--------+--------+
-                             |
-                             v
-                    +--------+--------+
-                    |   Legislator    |
-                    | (drafts legal   |
-                    |  code from      |
-                    |  principles)    |
-                    +--------+--------+
-                             |
-                             v
-              +--------------+--------------+
-              |                             |
-    +---------v----------+      +-----------v--------+
-    |  Loophole Finder   |      |  Overreach Finder  |
-    |  (legal but        |      |  (illegal but      |
-    |   immoral)         |      |   moral)           |
-    +--------+-----------+      +-----------+--------+
-              |                             |
-              +-------------+---------------+
-                            |
-                            v
-                   +--------+--------+
-                   |     Judge       |
-                   | (auto-resolve   |
-                   |  or escalate)   |
-                   +--------+--------+
-                            |
-                +-----------+-----------+
-                |                       |
-        +-------v-------+      +-------v--------+
-        | Auto-resolved |      |  Escalated     |
-        | (code updated,|      |  to YOU        |
-        |  case becomes |      |  (genuine      |
-        |  precedent)   |      |   moral        |
-        +---------------+      |   dilemma)     |
-                               +----------------+
-```
+If a round finds no failures, that means only that this round of model-mediated search did not produce parseable cases that survived the loop. It does not establish completeness.
 
-Each resolved case — whether by the Judge or by you — becomes binding precedent. The adversarial agents attack again, and the cycle repeats. Round after round, the legal code tightens, and the cases that reach you get harder and more revealing.
+## Authority Order
+
+Loophole has a simple authority chain:
+
+1. **Human principles**
+2. **Human clarifications and escalated resolutions**
+3. **Current legal code**
+4. **Resolved case history**
+5. **Model judgments and rewrites**
+
+The human remains the highest authority layer throughout.
+
+The system attempts to preserve resolved precedent through prompt context and validator checks. That is a meaningful constraint, but it is not a formal guarantee.
+
+## Session Lifecycle
+
+`new`:
+- collects a domain and principles
+- drafts an initial code
+- enters the adversarial loop
+
+Each loop round:
+- runs both adversarial finders
+- evaluates every case through the judge
+- auto-applies only revisions that survive validation against resolved cases
+- escalates unresolved or regression-inducing cases to the operator
+- saves session artifacts after each completed case
+
+`resume`:
+- reloads a saved session and continues the loop
+
+`visualize`:
+- renders an HTML report for a saved session
+
+## Outputs
+
+By default, each session writes:
+
+- `state.json`
+- `current_code.md`
+- `case_log.md`
+- `report.html`
+
+See [docs/operator-guide.md](docs/operator-guide.md) for current path behavior and the `session_dir` caveat.
 
 ## Setup
 
-Requires Python 3.12+ and an Anthropic API key.
+### Requirements
+
+- Python 3.12+
+- an Anthropic API key for live runs
+
+### Install
+
+Using `uv`:
 
 ```bash
-# Clone and install
-git clone <repo-url>
-cd law
+git clone https://github.com/McGluut/loophole_go
+cd loophole_go
 uv sync
+```
 
-# Set your API key
+Using plain Python tooling:
+
+```bash
+git clone https://github.com/McGluut/loophole_go
+cd loophole_go
+python -m pip install anthropic pydantic rich typer pyyaml
+```
+
+### Set your API key
+
+Bash:
+
+```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+PowerShell:
+
+```powershell
+$env:ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
 ## Usage
 
 ### Start a new session
 
-Interactive mode:
+Installed console script:
+
 ```bash
-uv run python -m loophole.main
+loophole new --domain privacy --principles examples/privacy_principles.txt
 ```
 
-Or directly with a domain and principles file:
+Module form:
+
 ```bash
-uv run python -m loophole.main new --domain privacy -p examples/privacy_principles.txt
+python -m loophole.main new --domain privacy --principles examples/privacy_principles.txt
 ```
 
-You'll see the initial legal code, then the adversarial loop begins. Each round:
-1. Both adversarial agents attack the current code
-2. The Judge processes each case (auto-resolve or escalate)
-3. You see a summary and choose to continue, view the code, or stop
+Interactive menu:
 
-When a case is escalated, you'll be prompted to make a decision. Your decision becomes a new constraint that the legal code must respect going forward.
+```bash
+python -m loophole.main
+```
 
 ### Resume a session
 
-Sessions auto-save after every case. Pick up where you left off:
 ```bash
-uv run python -m loophole.main resume
+loophole resume
 ```
 
-### Generate a visualization
+or
 
-After a session (or for any past session), generate an HTML report:
 ```bash
-uv run python -m loophole.main visualize
+python -m loophole.main resume
 ```
 
-This creates a `report.html` in the session directory with:
-- Your moral principles and the initial legal code
-- A timeline of every adversarial case
-- Git-style diffs showing how the code changed after each case
-- The final legal code
-
-### List sessions
+### Generate a report
 
 ```bash
-uv run python -m loophole.main list
+loophole visualize
+```
+
+or
+
+```bash
+python -m loophole.main visualize
 ```
 
 ## Configuration
 
-Edit `config.yaml` to tune the system:
+The default configuration lives in [config.yaml](config.yaml):
 
 ```yaml
 model:
-  default: "claude-sonnet-4-20250514"   # Which Claude model to use
+  default: "claude-sonnet-4-20250514"
   max_tokens: 4096
 
 temperatures:
-  legislator: 0.4          # Lower = more precise drafting
-  loophole_finder: 0.9     # Higher = more creative attacks
+  legislator: 0.4
+  loophole_finder: 0.9
   overreach_finder: 0.9
-  judge: 0.3               # Lower = more conservative judgments
+  judge: 0.3
 
 loop:
   max_rounds: 10
-  cases_per_agent: 3       # How many cases each attacker finds per round
+  cases_per_agent: 3
 
 session_dir: "sessions"
 ```
 
-## Writing Good Principles
+Current operational caveat:
 
-The system works best when your principles are:
+- this repo is still best run from the repository root
+- `session_dir` is used for session storage and report output, but some operator assumptions remain root-oriented
 
-- **Specific enough to draft from.** "I believe in fairness" is too vague. "Companies should not sell user data without explicit, informed consent" gives the legislator something to work with.
-- **Broad enough to have tensions.** If your principles only cover one narrow situation, the adversarial agents won't find interesting cases. Cover the domain from multiple angles.
-- **Honest.** The system surfaces conflicts in *your* beliefs. If you state principles you don't actually hold, the escalated cases won't be meaningful.
+## Development
 
-See `examples/privacy_principles.txt` for a starting point.
+Run the test suite:
 
-## Project Structure
-
-```
-loophole/
-  main.py              CLI and main adversarial loop
-  models.py            Data models (SessionState, Case, LegalCode)
-  llm.py               Anthropic SDK wrapper
-  prompts.py           All agent prompt templates
-  session.py           Session persistence (JSON + markdown)
-  visualize.py         HTML report generator
-  agents/
-    base.py            Base agent class
-    legislator.py      Drafts and revises the legal code
-    loophole_finder.py Finds legal-but-immoral scenarios
-    overreach_finder.py Finds illegal-but-moral scenarios
-    judge.py           Auto-resolves cases or escalates
-
-sessions/              One directory per session (auto-created)
-examples/              Example moral principles files
-config.yaml            Model and loop configuration
+```bash
+python -m unittest discover -s tests -v
 ```
 
-## Why This Matters
+The current tests focus on:
 
-Most attempts to formalize ethics start with the rules and hope they cover everything. Loophole starts with your intuitions and systematically finds where they break down. It's less "solve ethics" and more "discover what you actually believe by watching it fail."
+- protocol contract failures
+- session persistence
+- report generation
+- human-escalation rollback behavior
 
-The same architecture applies anywhere humans write rules for AI systems: content moderation policies, LLM system prompts, codes of conduct, safety specifications. Anywhere there's a gap between what the rules say and what the rules mean, Loophole will find it.
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/TRUST_MODEL.md](docs/TRUST_MODEL.md)
+- [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
+- [docs/operator-guide.md](docs/operator-guide.md)
+- [docs/SESSION_REVIEW_TEMPLATE.md](docs/SESSION_REVIEW_TEMPLATE.md)
+
+## Why This Repo Exists
+
+Most rule systems look stronger than they are until someone attacks their wording. Loophole is useful when you want a structured way to pressure-test a draft norm system, keep the human in charge, and leave behind auditable artifacts rather than a single polished answer.
+
+That is the ambition.
+
+The current repo should be read as an experimental application that helps surface candidate gaps, not as a settled engine for moral or legal judgment.

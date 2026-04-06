@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from loophole.agents.base import BaseAgent
+from loophole.errors import ProtocolError
 from loophole.models import Case, SessionState
 from loophole.prompts import JUDGE_RESOLVE, JUDGE_SYSTEM, JUDGE_VALIDATE
 
@@ -65,11 +66,17 @@ class Judge(BaseAgent):
         reasoning = _extract_tag(raw, "reasoning") or ""
 
         if verdict == "resolvable":
+            proposed_revision = _extract_tag(raw, "proposed_revision")
+            resolution_summary = _extract_tag(raw, "resolution_summary")
+            if not proposed_revision or not resolution_summary:
+                raise ProtocolError(
+                    "Judge marked a case resolvable without providing a full revision and resolution summary."
+                )
             return JudgeResult(
                 resolvable=True,
                 reasoning=reasoning,
-                proposed_revision=_extract_tag(raw, "proposed_revision"),
-                resolution_summary=_extract_tag(raw, "resolution_summary"),
+                proposed_revision=proposed_revision,
+                resolution_summary=resolution_summary,
             )
         return JudgeResult(
             resolvable=False,
@@ -89,9 +96,13 @@ class Judge(BaseAgent):
         raw = self.llm.call(JUDGE_SYSTEM, user_msg, temperature=self.temperature)
 
         passes_match = re.search(r"<passes>\s*(.*?)\s*</passes>", raw, re.DOTALL)
-        passes = passes_match.group(1).strip().lower() == "true" if passes_match else False
+        if not passes_match:
+            raise ProtocolError("Judge validation response did not include a <passes> tag.")
+        passes = passes_match.group(1).strip().lower() == "true"
 
-        details = _extract_tag(raw, "details") or raw
+        details = _extract_tag(raw, "details")
+        if not details:
+            raise ProtocolError("Judge validation response did not include a <details> tag.")
         return ValidationResult(passes=passes, details=details)
 
 

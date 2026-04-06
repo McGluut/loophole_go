@@ -15,6 +15,7 @@ from loophole.agents.judge import Judge
 from loophole.agents.legislator import Legislator
 from loophole.agents.loophole_finder import LoopholeFinder
 from loophole.agents.overreach_finder import OverreachFinder
+from loophole.errors import DependencyError, ProtocolError
 from loophole.llm import LLMClient
 from loophole.models import CaseStatus, CaseType, LegalCode, SessionState
 from loophole.session import SessionManager
@@ -98,6 +99,56 @@ def _get_multiline_input(prompt_text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _assign_case_ids(state: SessionState, cases: list) -> list:
+    for offset, case_obj in enumerate(cases):
+        case_obj.id = state.next_case_id + offset
+    return cases
+
+
+def _accept_revision(state: SessionState, revised: LegalCode) -> None:
+    state.current_code = revised
+    state.code_history.append(revised)
+
+
+def _validate_revised_code(state: SessionState, revised: LegalCode, judge: Judge):
+    if not state.resolved_cases:
+        return None
+    return judge.validate(state, revised.text)
+
+
+def _try_user_resolution(state, case_obj, decision, legislator, judge):
+    clarification = f"[Case #{case_obj.id}] {decision}"
+    original_status = case_obj.status
+    original_resolution = case_obj.resolution
+    original_resolved_by = case_obj.resolved_by
+
+    case_obj.status = CaseStatus.USER_RESOLVED
+    case_obj.resolution = decision
+    case_obj.resolved_by = "user"
+    state.user_clarifications.append(clarification)
+
+    try:
+        revised = legislator.revise(state, case_obj)
+        validation = _validate_revised_code(state, revised, judge)
+        if validation is not None and not validation.passes:
+            return False, validation.details
+
+        _accept_revision(state, revised)
+        return True, f"Code updated -> v{revised.version}"
+    finally:
+        accepted = bool(
+            state.code_history
+            and state.current_code is state.code_history[-1]
+            and case_obj.resolved_by == "user"
+        )
+        if not accepted:
+            case_obj.status = original_status
+            case_obj.resolution = original_resolution
+            case_obj.resolved_by = original_resolved_by
+            if state.user_clarifications and state.user_clarifications[-1] == clarification:
+                state.user_clarifications.pop()
+
+
 def _run_adversarial_loop(state, agents, session_mgr, config):
     max_rounds = config["loop"]["max_rounds"]
     legislator: Legislator = agents["legislator"]
@@ -110,15 +161,26 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
         console.print(Rule(f"[bold] Round {state.current_round} [/bold]", style="cyan"))
 
         # Phase 1: Adversarial search
-        console.print("\n[bold]Searching for loopholes...[/bold]", end="")
-        loopholes = loophole_finder.find(state)
-        console.print(f" found [red]{len(loopholes)}[/red]")
+        try:
+            console.print("\n[bold]Searching for loopholes...[/bold]", end="")
+            loopholes = loophole_finder.find(state)
+            console.print(f" found [red]{len(loopholes)}[/red]")
 
-        console.print("[bold]Searching for overreach...[/bold]", end="")
-        overreaches = overreach_finder.find(state)
-        console.print(f" found [yellow]{len(overreaches)}[/yellow]")
+            console.print("[bold]Searching for overreach...[/bold]", end="")
+            overreaches = overreach_finder.find(state)
+            console.print(f" found [yellow]{len(overreaches)}[/yellow]")
+        except ProtocolError as exc:
+            console.print(
+                Panel(
+                    str(exc),
+                    title="[red bold]Agent Protocol Error[/red bold]",
+                    border_style="red",
+                    padding=(1, 2),
+                )
+            )
+            raise typer.Exit(code=1) from exc
 
-        all_cases = loopholes + overreaches
+        all_cases = _assign_case_ids(state, loopholes + overreaches)
 
         if not all_cases:
             console.print(
@@ -139,7 +201,18 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
 
             # Judge attempts auto-resolution
             console.print("  [dim]Judge evaluating...[/dim]", end="")
-            result = judge.evaluate(state, case_obj)
+            try:
+                result = judge.evaluate(state, case_obj)
+            except ProtocolError as exc:
+                console.print(
+                    Panel(
+                        str(exc),
+                        title="[red bold]Judge Protocol Error[/red bold]",
+                        border_style="red",
+                        padding=(1, 2),
+                    )
+                )
+                raise typer.Exit(code=1) from exc
 
             if result.resolvable:
                 # Validate against test suite
@@ -153,10 +226,9 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
 
                     revised = legislator.revise(state, case_obj)
 
-                    validation = judge.validate(state, revised.text)
-                    if validation.passes:
-                        state.current_code = revised
-                        state.code_history.append(revised)
+                    validation = _validate_revised_code(state, revised, judge)
+                    if validation is None or validation.passes:
+                        _accept_revision(state, revised)
                         console.print(
                             f" [green]Resolved → Code v{revised.version}[/green]"
                         )
@@ -167,7 +239,7 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
                         case_obj.resolution = None
                         case_obj.resolved_by = None
                         console.print(" [red]Validation failed — escalating[/red]")
-                        _escalate(state, case_obj, validation.details, legislator)
+                        _escalate(state, case_obj, validation.details, legislator, judge)
                         round_escalated += 1
                 else:
                     # No prior cases to validate against, or no proposed revision
@@ -176,8 +248,7 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
                     case_obj.resolved_by = "judge"
 
                     revised = legislator.revise(state, case_obj)
-                    state.current_code = revised
-                    state.code_history.append(revised)
+                    _accept_revision(state, revised)
                     console.print(
                         f" [green]Resolved → Code v{revised.version}[/green]"
                     )
@@ -185,7 +256,7 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
             else:
                 # Unresolvable — escalate to user
                 console.print(" [red bold]Cannot resolve — escalating to you[/red bold]")
-                _escalate(state, case_obj, result.conflict_explanation or result.reasoning, legislator)
+                _escalate(state, case_obj, result.conflict_explanation or result.reasoning, legislator, judge)
                 round_escalated += 1
 
             session_mgr.save(state)
@@ -214,17 +285,20 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
         f"{state.current_round} rounds, code at v{state.current_code.version}"
     )
     console.print(
-        f"[dim]Session saved to: sessions/{state.session_id}/[/dim]"
+        f"[dim]Session saved to: {Path(config['session_dir']) / state.session_id}/[/dim]"
     )
 
     # Generate HTML report
     from loophole.visualize import generate_html
-    report_path = generate_html(state)
+    report_path = generate_html(
+        state,
+        output_path=str(Path(config["session_dir"]) / state.session_id / "report.html"),
+    )
     console.print(f"[bold blue]HTML report:[/bold blue] {report_path}")
     console.print("[dim]Open it in a browser for a Twitter-ready visualization[/dim]")
 
 
-def _escalate(state, case_obj, conflict_text, legislator):
+def _escalate(state, case_obj, conflict_text, legislator, judge):
     console.print(
         Panel(
             f"[bold]The judge could not resolve this case without breaking prior rulings.[/bold]\n\n"
@@ -235,23 +309,25 @@ def _escalate(state, case_obj, conflict_text, legislator):
         )
     )
 
-    decision = _get_multiline_input(
-        "How should this case be handled? Your decision becomes a new constraint:"
-    )
+    while True:
+        decision = _get_multiline_input(
+            "How should this case be handled? Your decision becomes a new constraint:"
+        )
 
-    case_obj.status = CaseStatus.USER_RESOLVED
-    case_obj.resolution = decision
-    case_obj.resolved_by = "user"
-    state.user_clarifications.append(
-        f"[Case #{case_obj.id}] {decision}"
-    )
+        console.print("  [dim]Updating legal code...[/dim]")
+        accepted, details = _try_user_resolution(state, case_obj, decision, legislator, judge)
+        if accepted:
+            console.print(f"  [green]{details}[/green]")
+            return
 
-    # Legislator incorporates the user's decision
-    console.print("  [dim]Updating legal code...[/dim]")
-    revised = legislator.revise(state, case_obj)
-    state.current_code = revised
-    state.code_history.append(revised)
-    console.print(f"  [green]Code updated → v{revised.version}[/green]")
+        console.print(
+            Panel(
+                f"[bold]That decision still breaks established precedent.[/bold]\n\n{details}",
+                title="[yellow bold]Revision Rejected[/yellow bold]",
+                border_style="yellow",
+                padding=(1, 2),
+            )
+        )
 
 
 def _display_round_summary(state, total, auto, escalated):
@@ -283,7 +359,11 @@ def new(
     )
 
     config = _load_config()
-    agents = _build_agents(config)
+    try:
+        agents = _build_agents(config)
+    except DependencyError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
 
     if not domain:
         domain = Prompt.ask("\n[bold]Domain[/bold] (e.g., privacy, property, speech)")
@@ -351,7 +431,11 @@ def resume(
         session_id = sessions[int(choice) - 1]["id"]
 
     state = session_mgr.load(session_id)
-    agents = _build_agents(config)
+    try:
+        agents = _build_agents(config)
+    except DependencyError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
 
     console.print(f"\n[bold]Resuming session:[/bold] {session_id}")
     console.print(f"Domain: {state.domain} | Round: {state.current_round} | Code: v{state.current_code.version}")

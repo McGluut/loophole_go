@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from loophole.agents.base import BaseAgent
+from loophole.errors import ProtocolError
 from loophole.models import Case, LegalCode, SessionState
 from loophole.prompts import LEGISLATOR_INITIAL, LEGISLATOR_REVISE, LEGISLATOR_SYSTEM
 
@@ -47,12 +48,16 @@ class Legislator(BaseAgent):
 
     def draft_initial(self, state: SessionState) -> LegalCode:
         raw = self.run(state)
-        text = _extract_tag(raw, "legal_code") or raw
+        text = _extract_tag(raw, "legal_code")
+        if not text:
+            raise ProtocolError("Legislator did not return a <legal_code> block for the initial draft.")
         return LegalCode(version=1, text=text.strip())
 
     def revise(self, state: SessionState, case: Case) -> LegalCode:
         raw = self.run(state, case=case)
-        text = _extract_tag(raw, "legal_code") or raw
+        text = _extract_tag(raw, "legal_code")
+        if not text:
+            raise ProtocolError("Legislator did not return a <legal_code> block for a revision.")
         changelog = _extract_tag(raw, "changelog")
         return LegalCode(
             version=state.current_code.version + 1,

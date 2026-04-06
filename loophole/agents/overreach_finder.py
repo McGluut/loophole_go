@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from loophole.agents.base import BaseAgent
+from loophole.errors import ProtocolError
 from loophole.models import Case, CaseType, SessionState
 from loophole.prompts import OVERREACH_FINDER_SYSTEM, OVERREACH_FINDER_USER
 
@@ -37,10 +38,10 @@ class OverreachFinder(BaseAgent):
 
     def find(self, state: SessionState) -> list[Case]:
         raw = self.run(state)
-        return _parse_scenarios(raw, state)
+        return _parse_scenarios(raw, state, expected_count=self.cases_per_agent)
 
 
-def _parse_scenarios(raw: str, state: SessionState) -> list[Case]:
+def _parse_scenarios(raw: str, state: SessionState, expected_count: int) -> list[Case]:
     cases: list[Case] = []
     for m in re.finditer(
         r"<scenario>\s*<description>(.*?)</description>\s*<explanation>(.*?)</explanation>\s*</scenario>",
@@ -55,5 +56,9 @@ def _parse_scenarios(raw: str, state: SessionState) -> list[Case]:
                 scenario=m.group(1).strip(),
                 explanation=m.group(2).strip(),
             )
+        )
+    if len(cases) != expected_count:
+        raise ProtocolError(
+            f"Overreach finder returned {len(cases)} parseable scenarios; expected {expected_count}."
         )
     return cases
