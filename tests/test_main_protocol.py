@@ -8,7 +8,7 @@ import typer
 
 import loophole.main as main_module
 from loophole.errors import ProtocolError
-from loophole.main import _assign_case_ids, _try_user_resolution
+from loophole.main import _assign_case_ids, _hold_open_case, _try_user_resolution
 from loophole.models import Case, CaseStatus, CaseType, LegalCode, SessionState
 
 
@@ -143,14 +143,65 @@ class MainProtocolTests(unittest.TestCase):
         )
 
         with mock.patch.object(main_module, "_get_multiline_input", return_value="decision"):
-            with self.assertRaises(typer.Exit):
-                main_module._escalate(
-                    state,
-                    current,
-                    "conflict",
-                    BrokenLegislator(),
-                    DummyJudge(True),
-                )
+            with mock.patch.object(main_module.Prompt, "ask", return_value="resolve now"):
+                with self.assertRaises(typer.Exit):
+                    main_module._escalate(
+                        state,
+                        current,
+                        "conflict",
+                        BrokenLegislator(),
+                        DummyJudge(True),
+                    )
+
+    def test_escalate_records_pressure_metadata_on_case(self) -> None:
+        state = make_state()
+        current = Case(
+            id=2,
+            round=1,
+            case_type=CaseType.OVERREACH,
+            scenario="current",
+            explanation="current",
+            status=CaseStatus.ESCALATED,
+        )
+
+        with mock.patch.object(main_module, "_get_multiline_input", return_value="decision"):
+            with mock.patch.object(main_module.Prompt, "ask", return_value="resolve now"):
+                with mock.patch.object(
+                    main_module,
+                    "_try_user_resolution",
+                    return_value=(True, "Code updated -> v2"),
+                ):
+                    main_module._escalate(
+                        state,
+                        current,
+                        "conflict",
+                        DummyLegislator("Article 1 revised"),
+                        DummyJudge(True),
+                        pressure_kind="principle_tension",
+                        pressure_reason="The case forces a choice between two stated commitments.",
+                    )
+
+        self.assertEqual(current.pressure_kind, "principle_tension")
+        self.assertEqual(
+            current.pressure_reason,
+            "The case forces a choice between two stated commitments.",
+        )
+
+    def test_hold_open_case_marks_case_without_revising_code(self) -> None:
+        current = Case(
+            id=2,
+            round=1,
+            case_type=CaseType.OVERREACH,
+            scenario="current",
+            explanation="current",
+            status=CaseStatus.ESCALATED,
+        )
+
+        _hold_open_case(current, "Need a second pass on the principles.")
+
+        self.assertEqual(current.status, CaseStatus.HOLD_OPEN)
+        self.assertEqual(current.resolution, "Need a second pass on the principles.")
+        self.assertEqual(current.resolved_by, "user")
 
     def test_new_turns_initial_draft_protocol_error_into_clean_exit(self) -> None:
         with mock.patch.object(main_module, "_load_config", return_value={"session_dir": "sessions"}):

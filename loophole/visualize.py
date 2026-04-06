@@ -65,7 +65,7 @@ def generate_html(state: SessionState, output_path: str | None = None) -> str:
     case_to_history = _build_version_map(state)
 
     for cases_idx, case in enumerate(state.cases):
-        if case.status not in (CaseStatus.AUTO_RESOLVED, CaseStatus.USER_RESOLVED):
+        if case.status not in (CaseStatus.AUTO_RESOLVED, CaseStatus.USER_RESOLVED, CaseStatus.HOLD_OPEN):
             continue
 
         # Get before/after code for diff
@@ -80,8 +80,12 @@ def generate_html(state: SessionState, output_path: str | None = None) -> str:
         case_type_desc = "Legal but Immoral" if case.case_type == CaseType.LOOPHOLE else "Illegal but Moral"
         color = "#ef4444" if case.case_type == CaseType.LOOPHOLE else "#eab308"
         attack_bg = "#1c1012" if case.case_type == CaseType.LOOPHOLE else "#1c1a0e"
-        resolved_by = "Judge (auto)" if case.resolved_by == "judge" else "Human (escalated)"
-        resolved_badge_color = "#10b981" if case.resolved_by == "judge" else "#8b5cf6"
+        if case.status == CaseStatus.HOLD_OPEN:
+            resolved_by = "Held open"
+            resolved_badge_color = "#f97316"
+        else:
+            resolved_by = "Judge (auto)" if case.resolved_by == "judge" else "Human (escalated)"
+            resolved_badge_color = "#10b981" if case.resolved_by == "judge" else "#8b5cf6"
 
         diff_section = ""
         if before_code and after_code:

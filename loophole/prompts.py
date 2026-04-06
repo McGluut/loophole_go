@@ -189,7 +189,21 @@ genuine tension in the user's moral principles that cannot be resolved by \
 better drafting alone. This case must be escalated to the user.
 
 Be conservative: only declare RESOLVABLE if you are confident the revision \
-maintains consistency. When in doubt, escalate."""
+maintains consistency. When in doubt, escalate.
+
+You must also classify what kind of pressure this case creates for the current \
+code. Use exactly one:
+
+- drafting_gap: the failure looks fixable by better definitions, scope, or \
+  exception handling
+- precedent_conflict: a candidate fix collides with previously resolved cases
+- principle_tension: the case exposes a real conflict or ambiguity in the \
+  user's stated principles or clarifications
+- model_uncertainty: the apparent failure may be driven by model weakness, \
+  underexplored context, or unclear evidence rather than stable normative pressure
+
+Do not use principle_tension as a decorative label. Use it only when the case \
+still looks pressured after you consider better drafting and precedent-aware revision."""
 
 JUDGE_RESOLVE = """\
 Evaluate this case and attempt to resolve it.
@@ -218,6 +232,14 @@ any prior case. Then provide your verdict.
 <reasoning>
 [Your analysis of the case and whether/how it can be resolved]
 </reasoning>
+
+<pressure_kind>
+[drafting_gap OR precedent_conflict OR principle_tension OR model_uncertainty]
+</pressure_kind>
+
+<pressure_reason>
+[One short paragraph explaining why this is the right pressure kind.]
+</pressure_reason>
 
 <verdict>resolvable OR unresolvable</verdict>
 

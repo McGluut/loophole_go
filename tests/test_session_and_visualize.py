@@ -84,3 +84,32 @@ class SessionAndVisualizeTests(unittest.TestCase):
 
             self.assertEqual(Path(written), output_path)
             self.assertTrue(output_path.exists())
+
+    def test_generate_html_includes_held_open_cases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = SessionState(
+                session_id="session_d",
+                domain="privacy",
+                moral_principles="Protect privacy.",
+                current_code=LegalCode(version=1, text="Article 1"),
+                code_history=[LegalCode(version=1, text="Article 1")],
+                cases=[
+                    Case(
+                        id=1,
+                        round=1,
+                        case_type=CaseType.LOOPHOLE,
+                        scenario="scenario",
+                        explanation="explanation",
+                        status=CaseStatus.HOLD_OPEN,
+                        resolution="Need later human review.",
+                        resolved_by="user",
+                    )
+                ],
+                current_round=1,
+            )
+
+            output_path = Path(tmpdir) / "held-open-report.html"
+            written = generate_html(state, output_path=str(output_path))
+
+            self.assertEqual(Path(written), output_path)
+            self.assertIn("Held open", output_path.read_text())

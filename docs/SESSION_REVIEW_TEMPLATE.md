@@ -11,6 +11,7 @@ Use this after a meaningful run when you want a disciplined human pass over the 
 ## Cases To Revisit
 
 ### Case ID
+- Pressure kind:
 - Keep accepted result?
 - If not, why not?
 - Better clarification or principle wording:
@@ -21,6 +22,7 @@ Use this after a meaningful run when you want a disciplined human pass over the 
 - Did the legal code become clearer?
 - Did the revisions introduce drift or bloat?
 - Were any escalations obviously shallow or model-driven?
+- Which pressure kinds dominated, and did that distribution look believable?
 
 ## Configuration Pressure
 
@@ -32,5 +34,6 @@ Use this after a meaningful run when you want a disciplined human pass over the 
 ## Next Move
 
 - Resume same session
+- Hold cases open and revisit later
 - Start fresh with revised principles
 - Change prompts or runtime behavior first

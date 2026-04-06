@@ -15,6 +15,7 @@ class CaseStatus(str, Enum):
     PENDING = "pending"
     AUTO_RESOLVED = "auto_resolved"
     ESCALATED = "escalated"
+    HOLD_OPEN = "hold_open"
     USER_RESOLVED = "user_resolved"
 
 
@@ -24,6 +25,8 @@ class Case(BaseModel):
     case_type: CaseType
     scenario: str
     explanation: str
+    pressure_kind: str | None = None
+    pressure_reason: str | None = None
     status: CaseStatus = CaseStatus.PENDING
     resolution: str | None = None
     resolved_by: str | None = None  # "judge" or "user"
@@ -55,6 +58,10 @@ class SessionState(BaseModel):
             for c in self.cases
             if c.status in (CaseStatus.AUTO_RESOLVED, CaseStatus.USER_RESOLVED)
         ]
+
+    @property
+    def held_open_cases(self) -> list[Case]:
+        return [c for c in self.cases if c.status == CaseStatus.HOLD_OPEN]
 
     @property
     def next_case_id(self) -> int:

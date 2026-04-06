@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import unittest
 
+from loophole.agents.judge import Judge
 from loophole.agents.loophole_finder import _parse_scenarios as parse_loopholes
 from loophole.agents.overreach_finder import _parse_scenarios as parse_overreaches
 from loophole.errors import ProtocolError
-from loophole.models import LegalCode, SessionState
+from loophole.models import Case, CaseType, LegalCode, SessionState
 
 
 def make_state() -> SessionState:
@@ -53,3 +54,23 @@ class AgentProtocolTests(unittest.TestCase):
         self.assertEqual([case.id for case in cases], [1, 2])
         self.assertEqual(cases[0].scenario, "Scenario one")
         self.assertEqual(cases[1].explanation, "Explanation two")
+
+    def test_judge_requires_pressure_classification(self) -> None:
+        judge = Judge(llm=None)  # type: ignore[arg-type]
+        judge.run = lambda state, **kwargs: """
+<reasoning>Conflicting scope.</reasoning>
+<verdict>unresolvable</verdict>
+<conflict_explanation>Need human judgment.</conflict_explanation>
+"""  # type: ignore[method-assign]
+
+        state = make_state()
+        case = Case(
+            id=1,
+            round=1,
+            case_type=CaseType.LOOPHOLE,
+            scenario="Scenario one",
+            explanation="Explanation one",
+        )
+
+        with self.assertRaises(ProtocolError):
+            judge.evaluate(state, case)

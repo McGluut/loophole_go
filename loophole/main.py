@@ -75,12 +75,17 @@ def _display_legal_code(code: LegalCode) -> None:
 def _display_case(case_obj) -> None:
     color = "red" if case_obj.case_type == CaseType.LOOPHOLE else "yellow"
     label = "LOOPHOLE" if case_obj.case_type == CaseType.LOOPHOLE else "OVERREACH"
+    pressure_lines = ""
+    if getattr(case_obj, "pressure_kind", None):
+        pressure_lines += f"\n\n[bold]Pressure Kind:[/bold]\n{case_obj.pressure_kind}"
+    if getattr(case_obj, "pressure_reason", None):
+        pressure_lines += f"\n\n[bold]Pressure Reason:[/bold]\n{case_obj.pressure_reason}"
     console.print()
     console.print(
         Panel(
             f"[bold]Scenario:[/bold]\n{case_obj.scenario}\n\n"
-            f"[bold]Problem:[/bold]\n{case_obj.explanation}",
-            title=f"[{color}]Case #{case_obj.id} — {label}[/{color}]",
+            f"[bold]Problem:[/bold]\n{case_obj.explanation}{pressure_lines}",
+            title=f"[{color}]Case #{case_obj.id} - {label}[/{color}]",
             border_style=color,
             padding=(1, 2),
         )
@@ -149,6 +154,12 @@ def _try_user_resolution(state, case_obj, decision, legislator, judge):
                 state.user_clarifications.pop()
 
 
+def _hold_open_case(case_obj, note: str) -> None:
+    case_obj.status = CaseStatus.HOLD_OPEN
+    case_obj.resolution = note
+    case_obj.resolved_by = "user"
+
+
 def _display_protocol_error(title: str, message: str) -> None:
     console.print(
         Panel(
@@ -171,7 +182,6 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
         state.current_round += 1
         console.print(Rule(f"[bold] Round {state.current_round} [/bold]", style="cyan"))
 
-        # Phase 1: Adversarial search
         try:
             console.print("\n[bold]Searching for loopholes...[/bold]", end="")
             loopholes = loophole_finder.find(state)
@@ -195,14 +205,15 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
 
         if not all_cases:
             console.print(
-                "\n[green bold]No failures found! "
-                "The legal code appears robust against this round of testing.[/green bold]"
+                "\n[yellow bold]No parseable adversarial failures were accepted this round.[/yellow bold]"
+            )
+            console.print(
+                "[dim]Treat that as a local search result, not as evidence that the code is complete or robust in general.[/dim]"
             )
             if not Confirm.ask("Run another round to be sure?", default=False):
                 break
             continue
 
-        # Phase 2: Judge each case
         round_auto = 0
         round_escalated = 0
 
@@ -210,7 +221,6 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
             state.cases.append(case_obj)
             _display_case(case_obj)
 
-            # Judge attempts auto-resolution
             console.print("  [dim]Judge evaluating...[/dim]", end="")
             try:
                 result = judge.evaluate(state, case_obj)
@@ -225,12 +235,13 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
                 )
                 raise typer.Exit(code=1) from exc
 
+            case_obj.pressure_kind = result.pressure_kind
+            case_obj.pressure_reason = result.pressure_reason
+
             if result.resolvable:
-                # Validate against test suite
                 if result.proposed_revision and state.resolved_cases:
                     console.print(" [dim]validating...[/dim]", end="")
 
-                    # Have the legislator produce the actual revised code
                     case_obj.resolution = result.resolution_summary or result.reasoning
                     case_obj.status = CaseStatus.AUTO_RESOLVED
                     case_obj.resolved_by = "judge"
@@ -248,20 +259,24 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
                         raise typer.Exit(code=1) from exc
                     if validation is None or validation.passes:
                         _accept_revision(state, revised)
-                        console.print(
-                            f" [green]Resolved → Code v{revised.version}[/green]"
-                        )
+                        console.print(f" [green]Resolved -> Code v{revised.version}[/green]")
                         round_auto += 1
                     else:
-                        # Validation failed — escalate
                         case_obj.status = CaseStatus.ESCALATED
                         case_obj.resolution = None
                         case_obj.resolved_by = None
-                        console.print(" [red]Validation failed — escalating[/red]")
-                        _escalate(state, case_obj, validation.details, legislator, judge)
+                        console.print(" [red]Validation failed - escalating[/red]")
+                        _escalate(
+                            state,
+                            case_obj,
+                            validation.details,
+                            legislator,
+                            judge,
+                            pressure_kind="precedent_conflict",
+                            pressure_reason="The proposed revision failed validation against previously resolved cases.",
+                        )
                         round_escalated += 1
                 else:
-                    # No prior cases to validate against, or no proposed revision
                     case_obj.resolution = result.resolution_summary or result.reasoning
                     case_obj.status = CaseStatus.AUTO_RESOLVED
                     case_obj.resolved_by = "judge"
@@ -272,22 +287,25 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
                         _display_protocol_error("[red bold]Legislator Protocol Error[/red bold]", str(exc))
                         raise typer.Exit(code=1) from exc
                     _accept_revision(state, revised)
-                    console.print(
-                        f" [green]Resolved → Code v{revised.version}[/green]"
-                    )
+                    console.print(f" [green]Resolved -> Code v{revised.version}[/green]")
                     round_auto += 1
             else:
-                # Unresolvable — escalate to user
-                console.print(" [red bold]Cannot resolve — escalating to you[/red bold]")
-                _escalate(state, case_obj, result.conflict_explanation or result.reasoning, legislator, judge)
+                console.print(" [red bold]Cannot resolve - escalating to you[/red bold]")
+                _escalate(
+                    state,
+                    case_obj,
+                    result.conflict_explanation or result.reasoning,
+                    legislator,
+                    judge,
+                    pressure_kind=result.pressure_kind,
+                    pressure_reason=result.pressure_reason,
+                )
                 round_escalated += 1
 
             session_mgr.save(state)
 
-        # Round summary
         _display_round_summary(state, len(all_cases), round_auto, round_escalated)
 
-        # Continue?
         console.print()
         action = Prompt.ask(
             "[bold]Next?[/bold]",
@@ -311,21 +329,32 @@ def _run_adversarial_loop(state, agents, session_mgr, config):
         f"[dim]Session saved to: {Path(config['session_dir']) / state.session_id}/[/dim]"
     )
 
-    # Generate HTML report
     from loophole.visualize import generate_html
+
     report_path = generate_html(
         state,
         output_path=str(Path(config["session_dir"]) / state.session_id / "report.html"),
     )
     console.print(f"[bold blue]HTML report:[/bold blue] {report_path}")
-    console.print("[dim]Open it in a browser for a Twitter-ready visualization[/dim]")
+    console.print("[dim]Open it in a browser for a reviewable session timeline.[/dim]")
 
 
-def _escalate(state, case_obj, conflict_text, legislator, judge):
+def _escalate(state, case_obj, conflict_text, legislator, judge, pressure_kind=None, pressure_reason=None):
+    if pressure_kind:
+        case_obj.pressure_kind = pressure_kind
+    if pressure_reason:
+        case_obj.pressure_reason = pressure_reason
+
+    pressure_block = ""
+    if case_obj.pressure_kind:
+        pressure_block += f"\n\n[bold]Pressure kind:[/bold] {case_obj.pressure_kind}"
+    if case_obj.pressure_reason:
+        pressure_block += f"\n\n[bold]Why this pressure landed:[/bold]\n{case_obj.pressure_reason}"
+
     console.print(
         Panel(
             f"[bold]The judge could not resolve this case without breaking prior rulings.[/bold]\n\n"
-            f"{conflict_text or 'No additional conflict details.'}",
+            f"{conflict_text or 'No additional conflict details.'}{pressure_block}",
             title="[red bold]Escalation[/red bold]",
             border_style="red",
             padding=(1, 2),
@@ -333,6 +362,20 @@ def _escalate(state, case_obj, conflict_text, legislator, judge):
     )
 
     while True:
+        action = Prompt.ask(
+            "[bold]Escalation action[/bold]",
+            choices=["resolve now", "hold open"],
+            default="resolve now",
+        )
+
+        if action == "hold open":
+            note = _get_multiline_input(
+                "Why is this case being held open? This note will be saved without changing the legal code:"
+            )
+            _hold_open_case(case_obj, note or "Held open for later review.")
+            console.print("  [yellow]Case held open without revising the legal code.[/yellow]")
+            return
+
         decision = _get_multiline_input(
             "How should this case be handled? Your decision becomes a new constraint:"
         )
@@ -365,6 +408,7 @@ def _display_round_summary(state, total, auto, escalated):
     table.add_row("Cases found", str(total))
     table.add_row("Auto-resolved", f"[green]{auto}[/green]")
     table.add_row("Escalated to user", f"[red]{escalated}[/red]")
+    table.add_row("Held open", f"[yellow]{len(state.held_open_cases)}[/yellow]")
     table.add_row("Legal code version", f"v{state.current_code.version}")
     table.add_row("Total resolved cases", str(len(state.resolved_cases)))
     console.print(table)
@@ -399,18 +443,14 @@ def new(
         principles = Path(principles_file).read_text().strip()
         console.print(f"[dim]Loaded principles from {principles_file}[/dim]")
     else:
-        principles = _get_multiline_input(
-            "State your moral principles for this domain:"
-        )
+        principles = _get_multiline_input("State your moral principles for this domain:")
 
     session_id = f"{domain}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     session_mgr = SessionManager(config["session_dir"])
 
-    # Generate initial legal code
     console.print("\n[bold]Generating initial legal code...[/bold]")
     legislator: Legislator = agents["legislator"]
 
-    # Bootstrap: create a placeholder state for the initial draft
     placeholder = SessionState(
         session_id=session_id,
         domain=domain,
@@ -453,8 +493,12 @@ def resume(
         table.add_column("Code Version")
         for i, s in enumerate(sessions, 1):
             table.add_row(
-                str(i), s["id"], s["domain"],
-                str(s["round"]), str(s["cases"]), f"v{s['code_version']}"
+                str(i),
+                s["id"],
+                s["domain"],
+                str(s["round"]),
+                str(s["cases"]),
+                f"v{s['code_version']}",
             )
         console.print(table)
 
@@ -494,8 +538,11 @@ def list_sessions():
     table.add_column("Code Version")
     for s in sessions:
         table.add_row(
-            s["id"], s["domain"],
-            str(s["round"]), str(s["cases"]), f"v{s['code_version']}"
+            s["id"],
+            s["domain"],
+            str(s["round"]),
+            str(s["cases"]),
+            f"v{s['code_version']}",
         )
     console.print(table)
 
@@ -530,6 +577,7 @@ def visualize(
     state = session_mgr.load(session_id)
 
     from loophole.visualize import generate_html
+
     if output is None:
         output = str(Path(config["session_dir"]) / state.session_id / "report.html")
     report_path = generate_html(state, output_path=output)
@@ -538,9 +586,8 @@ def visualize(
 
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context):
-    """Loophole — Adversarial moral-legal code system."""
+    """Loophole - Adversarial moral-legal code system."""
     if ctx.invoked_subcommand is None:
-        # Interactive menu
         console.print(
             Panel(
                 "[bold]Loophole[/bold]\n"

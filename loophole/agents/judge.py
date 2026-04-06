@@ -29,6 +29,8 @@ def _format_resolved_cases(cases: list[Case]) -> str:
 class JudgeResult:
     resolvable: bool
     reasoning: str
+    pressure_kind: str
+    pressure_reason: str
     proposed_revision: str | None = None
     resolution_summary: str | None = None
     conflict_explanation: str | None = None
@@ -64,6 +66,10 @@ class Judge(BaseAgent):
         verdict = verdict_match.group(1).strip().lower() if verdict_match else "unresolvable"
 
         reasoning = _extract_tag(raw, "reasoning") or ""
+        pressure_kind = _extract_tag(raw, "pressure_kind")
+        pressure_reason = _extract_tag(raw, "pressure_reason")
+        if not pressure_kind or not pressure_reason:
+            raise ProtocolError("Judge response did not include a full pressure classification.")
 
         if verdict == "resolvable":
             proposed_revision = _extract_tag(raw, "proposed_revision")
@@ -75,12 +81,16 @@ class Judge(BaseAgent):
             return JudgeResult(
                 resolvable=True,
                 reasoning=reasoning,
+                pressure_kind=pressure_kind,
+                pressure_reason=pressure_reason,
                 proposed_revision=proposed_revision,
                 resolution_summary=resolution_summary,
             )
         return JudgeResult(
             resolvable=False,
             reasoning=reasoning,
+            pressure_kind=pressure_kind,
+            pressure_reason=pressure_reason,
             conflict_explanation=_extract_tag(raw, "conflict_explanation"),
         )
 
