@@ -17,5 +17,9 @@ class LLMBoundaryTests(unittest.TestCase):
             return real_import(name, *args, **kwargs)
 
         with mock.patch("builtins.__import__", side_effect=fake_import):
-            with self.assertRaises(DependencyError):
+            with self.assertRaises(DependencyError) as exc_info:
                 LLMClient()
+
+        message = str(exc_info.exception)
+        self.assertIn("uv sync", message)
+        self.assertIn("python -m pip install -e .", message)

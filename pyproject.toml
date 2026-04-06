@@ -1,7 +1,11 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "loophole"
 version = "0.1.0"
-description = "Adversarial moral-legal code system — stress-test ethical principles through adversarial AI agents"
+description = "Adversarial moral-legal code system - stress-test ethical principles through adversarial AI agents"
 requires-python = ">=3.12"
 dependencies = [
     "anthropic>=0.50.0",
@@ -13,3 +17,7 @@ dependencies = [
 
 [project.scripts]
 loophole = "loophole.main:app"
+
+[tool.setuptools.packages.find]
+include = ["loophole*"]
+exclude = ["sessions*", "tests*", "examples*", "docs*"]

@@ -16,7 +16,9 @@ class LLMClient:
         except ModuleNotFoundError as exc:
             raise DependencyError(
                 "The 'anthropic' package is required to run Loophole's live agent loop. "
-                "Install project dependencies before starting a session."
+                "From the repo root, run `uv sync` and start with `uv run loophole` "
+                "(or `uv run python -m loophole.main`). "
+                "If you are not using uv, run `python -m pip install -e .` first."
             ) from exc
 
         api_key = os.getenv("LOOPHOLE_API_KEY") or os.getenv("ANTHROPIC_API_KEY")

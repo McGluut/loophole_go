@@ -84,7 +84,33 @@ See [docs/operator-guide.md](docs/operator-guide.md) for current path behavior a
 - Python 3.12+
 - a live API key for the configured provider
 
-### Install
+### Quickstart for most users
+
+```bash
+git clone https://github.com/McGluut/loophole_go
+cd loophole_go
+uv sync
+```
+
+Set your key:
+
+```powershell
+$env:LOOPHOLE_API_KEY="sk-ant-..."
+```
+
+Run the app:
+
+```bash
+uv run loophole
+```
+
+If you prefer the module form:
+
+```bash
+uv run python -m loophole.main
+```
+
+### Install details
 
 Using `uv`:
 
@@ -94,12 +120,12 @@ cd loophole_go
 uv sync
 ```
 
-Using plain Python tooling:
+Using plain Python tooling without `uv`:
 
 ```bash
 git clone https://github.com/McGluut/loophole_go
 cd loophole_go
-python -m pip install anthropic pydantic rich typer pyyaml
+python -m pip install -e .
 ```
 
 ### Set your API key
@@ -126,6 +152,8 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 Live runs in this repo still use the Anthropic SDK today. The generic `LOOPHOLE_API_KEY` name is provided so local setup does not have to depend on a provider-specific environment variable.
 
+If you cloned the repo and are running from source, do not assume plain `python -m loophole.main` will pick up the `uv` environment. After `uv sync`, prefer `uv run loophole` or `uv run python -m loophole.main`.
+
 ## Usage
 
 ### Start a new session
@@ -133,43 +161,43 @@ Live runs in this repo still use the Anthropic SDK today. The generic `LOOPHOLE_
 Installed console script:
 
 ```bash
-loophole new --domain privacy --principles examples/privacy_principles.txt
+uv run loophole new --domain privacy --principles examples/privacy_principles.txt
 ```
 
 Module form:
 
 ```bash
-python -m loophole.main new --domain privacy --principles examples/privacy_principles.txt
+uv run python -m loophole.main new --domain privacy --principles examples/privacy_principles.txt
 ```
 
 Interactive menu:
 
 ```bash
-python -m loophole.main
+uv run loophole
 ```
 
 ### Resume a session
 
 ```bash
-loophole resume
+uv run loophole resume
 ```
 
 or
 
 ```bash
-python -m loophole.main resume
+uv run python -m loophole.main resume
 ```
 
 ### Generate a report
 
 ```bash
-loophole visualize
+uv run loophole visualize
 ```
 
 or
 
 ```bash
-python -m loophole.main visualize
+uv run python -m loophole.main visualize
 ```
 
 ## Configuration
